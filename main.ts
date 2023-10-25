@@ -1,19 +1,15 @@
-import { Plugin, Notice} from "obsidian";
-import { extractFrontmatter, hasMatchingTag } from './utils';
+import { Plugin, Notice, Modal } from "obsidian";
+import { extractFrontmatter, hasMatchingTag } from "./utils";
 import * as Encryption from "./encryption";
-import { PasswordModal, UnPairasightSettingTab } from './ui'
-
-
+import { PasswordModal, UnPairasightSettingTab } from "./ui";
 
 interface UnPairasightSettings {
-    passwordSet: boolean;
-    purged: boolean;
-    passwordHash?: string;
-    tagsToEncrypt?: string[];
-    tagsToSkip?: string[];
-  }
-  
-  
+  passwordSet: boolean;
+  purged: boolean;
+  passwordHash?: string;
+  tagsToEncrypt?: string[];
+  tagsToSkip?: string[];
+}
 
 // Main Plugin Class
 export default class UnPairasightPlugin extends Plugin {
@@ -28,7 +24,10 @@ export default class UnPairasightPlugin extends Plugin {
     this.registerCommands();
     this.handleWorkspaceEvents();
     this.addSettingTab(new UnPairasightSettingTab(this.app, this));
-
+    window.addEventListener(
+      "beforeunload",
+      this.beforeUnloadHandler.bind(this),
+    );
   }
 
   handleWorkspaceEvents() {
@@ -40,11 +39,33 @@ export default class UnPairasightPlugin extends Plugin {
       }
     });
 
-    this.app.workspace.on("quit", async () => {
-      if (this.password) {
-        await this.encryptVault(this.password);
-      }
+    this.registerEvent(
+      this.app.workspace.on("quit", async () => {
+        if (this.settings.passwordSet && this.password) {
+          await this.encryptVault(this.password);
+        }
+      }),
+    );
+  }
+
+  showEncryptionModal() {
+    const modal = new Modal(this.app);
+    modal.contentEl.createEl("h2", { text: "Encrypting..." });
+    modal.contentEl.createEl("p", {
+      text: "Obsidian will automatically close when complete.",
     });
+    modal.open();
+  }
+  async beforeUnloadHandler(event: BeforeUnloadEvent) {
+    event.preventDefault();
+    event.returnValue = "";
+    this.showEncryptionModal();
+    if (this.password) {
+      await this.encryptVault(this.password);
+    } else {
+      new PasswordModal(this.app, this, false).open();
+    }
+    window.close();
   }
 
   // Settings Management
@@ -54,19 +75,20 @@ export default class UnPairasightPlugin extends Plugin {
         passwordSet: false,
         purged: false,
         tagsToEncrypt: [],
-        tagsToSkip: []
+        tagsToSkip: [],
       },
-      await this.loadData()
+      await this.loadData(),
     );
   }
-  
+
   async saveSettings() {
     await this.saveData(this.settings);
   }
-  
 
   setPassword(password: string) {
     this.password = password;
+    this.settings.passwordSet = true;
+    this.saveSettings();
   }
   async registerCommands() {
     // Encrypt Vault Command
@@ -78,13 +100,12 @@ export default class UnPairasightPlugin extends Plugin {
 
     // Decrypt Vault Command
     this.addCommand({
-        id: 'decrypt-vault',
-        name: 'Decrypt Vault',
-        callback: () => {
-          // Open the PasswordModal for decryption
-          new PasswordModal(this.app, this, false, true).open();
-        },
-      }); 
+      id: "decrypt-vault",
+      name: "Decrypt Vault",
+      callback: () => {
+        new PasswordModal(this.app, this, false, true).open();
+      },
+    });
 
     // Purge Password Command
     this.addCommand({
@@ -110,59 +131,44 @@ export default class UnPairasightPlugin extends Plugin {
     new Notice("Password successfully purged.");
   }
 
-  
   // Encryption & Decryption Logic
   async encryptVault(password: string) {
     const fileCache = this.app.vault.getMarkdownFiles();
-    const tagsToEncrypt = this.settings.tagsToEncrypt || []; 
+    const tagsToEncrypt = this.settings.tagsToEncrypt || [];
     const tagsToSkip = this.settings.tagsToSkip || [];
-    
-    const encryptPromises = fileCache.map(async file => {
+
+    const encryptPromises = fileCache.map(async (file) => {
       let fileContent = await this.app.vault.read(file);
-      
+
       if (fileContent.startsWith(this.SIGNATURE)) return;
-  
+
       const frontmatter = extractFrontmatter(fileContent);
-      
+
       if (hasMatchingTag(frontmatter, tagsToSkip)) {
         return; // Skip encryption for these files
       }
-  
-      if (tagsToEncrypt.length > 0 && !hasMatchingTag(frontmatter, tagsToEncrypt)) {
+
+      if (
+        tagsToEncrypt.length > 0 &&
+        !hasMatchingTag(frontmatter, tagsToEncrypt)
+      ) {
         return; // Only encrypt files that have matching tags
       }
-  
-      const encryptedContent = Encryption.encrypt(fileContent, password);  // Using the modularized function
+      const encryptedContent = Encryption.encrypt(fileContent, password); 
       await this.app.vault.modify(file, encryptedContent);
     });
-  
+
     await Promise.all(encryptPromises);
   }
-  
+
   async decryptVault(password: string) {
     const fileCache = this.app.vault.getMarkdownFiles();
-    const tagsToEncrypt = this.settings.tagsToEncrypt || []; 
-    const tagsToSkip = this.settings.tagsToSkip || [];
-  
-    const decryptPromises = fileCache.map(async file => {
+    const decryptPromises = fileCache.map(async (file) => {
       let fileContent = await this.app.vault.read(file);
-      
       if (!fileContent.startsWith(this.SIGNATURE)) return;
-  
-      const frontmatter = extractFrontmatter(fileContent);
-      
-      if (hasMatchingTag(frontmatter, tagsToSkip)) {
-        return; // Skip decryption for these files
-      }
-  
-      if (tagsToEncrypt.length > 0 && !hasMatchingTag(frontmatter, tagsToEncrypt)) {
-        return; // Only decrypt files that have matching tags
-      }
-  
-      const decryptedContent = Encryption.decrypt(fileContent, password);  // Using the modularized function
+      const decryptedContent = Encryption.decrypt(fileContent, password);
       await this.app.vault.modify(file, decryptedContent);
     });
-  
     await Promise.all(decryptPromises);
   }
 }
