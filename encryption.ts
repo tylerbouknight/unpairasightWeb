@@ -1,44 +1,79 @@
-import * as crypto from "crypto";
-
 export const SIGNATURE = "[ENCRYPTED]";
 
-export const encrypt = (text: string, password: string): string => {
-  const iv = crypto.randomBytes(16);
-  const key = crypto.scryptSync(password, 'salt', 32);
-  const cipher = crypto.createCipheriv("aes-256-cbc", key, iv);
-
-  let encrypted = cipher.update(text, "utf8", "hex");
-  encrypted += cipher.final("hex");
-  encrypted = SIGNATURE + iv.toString('hex') + encrypted;
-
-  return encrypted;
+const arrayBufferToHex = buffer => {
+  const byteArray = new Uint8Array(buffer);
+  return Array.from(byteArray).map(byte => byte.toString(16).padStart(2, '0')).join('');
 };
 
-export const decrypt = (text: string, password: string): string => {
-  const key = crypto.scryptSync(password, 'salt', 32);
-  
-  if (text.startsWith(SIGNATURE)) {
-    text = text.substring(SIGNATURE.length);
-  } else {
+export const encrypt = async (text, password) => {
+  const iv = new Uint8Array(16);
+  window.crypto.getRandomValues(iv);
+  const enc = new TextEncoder();
+  const keyMaterial = await window.crypto.subtle.importKey(
+    'raw',
+    enc.encode(password),
+    { name: 'PBKDF2' },
+    false,
+    ['deriveKey']
+  );
+  const key = await window.crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt: enc.encode('salt'), iterations: 100000, hash: 'SHA-256' },
+    keyMaterial,
+    { name: 'AES-CBC', length: 256 },
+    true,
+    ['encrypt', 'decrypt']
+  );
+
+  const encryptedContent = await window.crypto.subtle.encrypt(
+    { name: 'AES-CBC', iv: iv },
+    key,
+    enc.encode(text)
+  );
+
+  return SIGNATURE + arrayBufferToHex(iv) + arrayBufferToHex(encryptedContent);
+};
+
+export const decrypt = async (text, password) => {
+  if (!text.startsWith(SIGNATURE)) {
     return text;
   }
 
-  const iv = Buffer.from(text.substring(0, 32), 'hex');
-  text = text.substring(32);
-  
-  const decipher = crypto.createDecipheriv("aes-256-cbc", key, iv);
-  let decrypted = decipher.update(text, "hex", "utf8");
-  decrypted += decipher.final("utf8");
+  text = text.substring(SIGNATURE.length);
+  const iv = new Uint8Array(text.substring(0, 32).match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
 
-  return decrypted;
+  const enc = new TextEncoder();
+  const keyMaterial = await window.crypto.subtle.importKey(
+    'raw',
+    enc.encode(password),
+    { name: 'PBKDF2' },
+    false,
+    ['deriveKey']
+  );
+  const key = await window.crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt: enc.encode('salt'), iterations: 100000, hash: 'SHA-256' },
+    keyMaterial,
+    { name: 'AES-CBC', length: 256 },
+    true,
+    ['encrypt', 'decrypt']
+  );
+
+  const encryptedContent = new Uint8Array(text.substring(32).match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+  const decryptedContent = await window.crypto.subtle.decrypt(
+    { name: 'AES-CBC', iv: iv },
+    key,
+    encryptedContent
+  );
+
+  return new TextDecoder().decode(decryptedContent);
 };
 
-export const hashPassword = (password: string): string => {
-  const hash = crypto.createHash("sha256");
-  hash.update(password);
-  return hash.digest("hex");
+export const hashPassword = async password => {
+  const enc = new TextEncoder();
+  const hashBuffer = await window.crypto.subtle.digest('SHA-256', enc.encode(password));
+  return arrayBufferToHex(hashBuffer);
 };
 
-export const verifyPassword = (inputPassword: string, storedHash: string): boolean => {
-  return hashPassword(inputPassword) === storedHash;
+export const verifyPassword = async (inputPassword, storedHash) => {
+  const inputHash = await hashPassword(inputPassword);
+  return inputHash === storedHash;
 };
