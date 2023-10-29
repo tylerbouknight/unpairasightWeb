@@ -32,9 +32,9 @@ export class PasswordModal extends Modal {
       );
     }
   
-    handleUnlock(password: string, isDecrypt: boolean = false) {
+    async handleUnlock(password: string, isDecrypt: boolean = false) {
       if (isDecrypt) {
-        if (verifyPassword(password, this.plugin.settings.passwordHash!)) {
+        if (await verifyPassword(password, this.plugin.settings.passwordHash!)) {
           this.plugin.decryptVault(password).catch(err => {
             console.error("Failed to decrypt vault:", err);
           });

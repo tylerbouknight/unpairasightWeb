@@ -154,7 +154,7 @@ export default class UnPairasightPlugin extends Plugin {
       ) {
         return; // Only encrypt files that have matching tags
       }
-      const encryptedContent = Encryption.encrypt(fileContent, password); 
+      const encryptedContent = await Encryption.encrypt(fileContent, password); 
       await this.app.vault.modify(file, encryptedContent);
     });
 
@@ -166,7 +166,7 @@ export default class UnPairasightPlugin extends Plugin {
     const decryptPromises = fileCache.map(async (file) => {
       let fileContent = await this.app.vault.read(file);
       if (!fileContent.startsWith(this.SIGNATURE)) return;
-      const decryptedContent = Encryption.decrypt(fileContent, password);
+      const decryptedContent = await Encryption.decrypt(fileContent, password);
       await this.app.vault.modify(file, decryptedContent);
     });
     await Promise.all(decryptPromises);
