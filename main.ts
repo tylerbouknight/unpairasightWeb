@@ -1,4 +1,5 @@
-import { Plugin, Notice, Modal } from "obsidian";
+import { Plugin, Notice, Modal, Vault, TFile } from "obsidian";
+import * as obsidian from "obsidian";
 import { extractFrontmatter, hasMatchingTag } from "./utils";
 import * as Encryption from "./encryption";
 import { PasswordModal, UnPairasightSettingTab } from "./ui";
@@ -18,6 +19,28 @@ export default class UnPairasightPlugin extends Plugin {
   settings: UnPairasightSettings;
   readonly SIGNATURE: string = "[ENCRYPTED]";
 
+  async logToMdFile(message: string) {
+    const vault = this.app.vault;
+    const logFilePath = "PluginLogs.md";
+  
+    // Check if the log file already exists
+    let logFile = vault.getAbstractFileByPath(logFilePath);
+    
+    if (!logFile) {
+      // Create the log file if it doesn't exist
+      await vault.create(logFilePath, `# Plugin Logs\n`);
+      logFile = vault.getAbstractFileByPath(logFilePath);
+    }
+  
+    if (logFile instanceof obsidian.TFile) {
+      // Append the message to the log file
+      const currentContent = await vault.read(logFile);
+      const newContent = `${currentContent}\n- ${message}`;
+      await vault.modify(logFile, newContent);
+    }
+  }
+  
+  
   // Lifecycle Methods
   async onload() {
     await this.loadSettings();
@@ -56,6 +79,7 @@ export default class UnPairasightPlugin extends Plugin {
     });
     modal.open();
   }
+
   async beforeUnloadHandler(event: BeforeUnloadEvent) {
     event.preventDefault();
     event.returnValue = "";
@@ -138,6 +162,7 @@ export default class UnPairasightPlugin extends Plugin {
     const tagsToSkip = this.settings.tagsToSkip || [];
 
     const encryptPromises = fileCache.map(async (file) => {
+      try {
       let fileContent = await this.app.vault.read(file);
 
       if (fileContent.startsWith(this.SIGNATURE)) return;
@@ -156,6 +181,10 @@ export default class UnPairasightPlugin extends Plugin {
       }
       const encryptedContent = await Encryption.encrypt(fileContent, password); 
       await this.app.vault.modify(file, encryptedContent);
+    }
+    catch (error) {
+      this.logToMdFile(`Error during encryption: ${error.message}`);
+    }
     });
 
     await Promise.all(encryptPromises);
