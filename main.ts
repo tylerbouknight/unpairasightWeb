@@ -181,6 +181,7 @@ export default class UnPairasightPlugin extends Plugin {
       }
       const encryptedContent = await Encryption.encrypt(fileContent, password); 
       await this.app.vault.modify(file, encryptedContent);
+      this.logToMdFile(`running`)
     }
     catch (error) {
       this.logToMdFile(`Error during encryption: ${error.message}`);
