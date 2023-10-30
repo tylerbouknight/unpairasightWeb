@@ -8,16 +8,12 @@
     "allowJs": true,
     "noImplicitAny": true,
     "moduleResolution": "node",
-    "importHelpers": false,
+    "importHelpers": true,
     "isolatedModules": true,
 	"strictNullChecks": true,
     "lib": [
       "DOM",
       "es2017",
-    ],
-    "typeRoots": [
-      "./node_modules/@types",
-      "./node_modules/obsidian"
     ]
   },  
   "include": [
